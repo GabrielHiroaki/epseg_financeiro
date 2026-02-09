@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+	<head>
+		<meta charset="UTF-8">
+		<title>ERP Financeiro Empresarial</title>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+		<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+		<style>
+			:root{
+			--bg:#0b1020;
+			--card:#111827;
+			--primary:#6366f1;
+			--danger:#ef4444;
+			--secondary:#9ca3af;
+			--text:#e5e7eb;
+			}
+			*{box-sizing:border-box;font-family:Segoe UI,Arial}
+			body{margin:0;background:var(--bg);color:var(--text)}
+			header{
+			background:#020617;
+			padding:15px 30px;
+			font-size:18px;
+			font-weight:600;
+			border-bottom:1px solid #1f2937;
+			}
+			.container{max-width:1200px;margin:auto;padding:20px}
+			.grid{
+			display:grid;
+			grid-template-columns:2fr 1fr;
+			gap:20px;
+			}
+			.card{
+			background:var(--card);
+			padding:20px;
+			border-radius:14px;
+			margin-bottom:20px;
+			}
+			h2,h3{margin-top:0}
+			input,select,button{
+			padding:10px;
+			border-radius:8px;
+			border:none;
+			background:#020617;
+			color:var(--text);
+			}
+			button{
+			background:var(--primary);
+			cursor:pointer;
+			}
+			button.danger{background:var(--danger)}
+			button:hover{opacity:.9}
+			form{
+			display:grid;
+			grid-template-columns:repeat(auto-fit,minmax(160px,1fr));
+			gap:10px;
+			}
+			table{
+			width:100%;
+			border-collapse:collapse;
+			margin-top:10px;
+			}
+			th,td{
+			padding:8px;
+			border-bottom:1px solid #1f2937;
+			}
+			th{color:var(--secondary)}
+			.actions button{margin-right:5px}
+			.total{
+			text-align:right;
+			font-size:18px;
+			margin-top:10px;
+			}
+			.filters{
+			display:flex;
+			gap:10px;
+			flex-wrap:wrap;
+			margin-bottom:10px;
+			}
+			/* ---------- Assinatura ---------- */
+			.assinatura {
+			position: fixed;
+			bottom: 18px;
+			right: 22px;
+			text-align: right;
+			font-size: 14px;
+			letter-spacing: 0.6px;
+			user-select: none;
+			opacity: 0.95;
+			}
+			.assinatura strong {
+			color: #b56bff;
+			font-weight: 700;
+			text-shadow:
+			0 0 6px rgba(181, 107, 255, 0.7),
+			0 0 16px rgba(155, 70, 255, 0.5),
+			0 0 28px rgba(120, 40, 220, 0.35);
+			}
+			.assinatura span {
+			display: block;
+			font-size: 11px;
+			color: #d6b8ff;
+			margin-top: 2px;
+			text-shadow: 0 0 5px rgba(181, 107, 255, 0.5);
+			}
+			.assinatura:hover strong {
+			text-shadow:
+			0 0 10px rgba(200, 140, 255, 1),
+			0 0 25px rgba(170, 90, 255, 0.9),
+			0 0 45px rgba(120, 40, 220, 0.8);
+			}
+		</style>
+	</head>
+	<body>
+		<header>💼 EP SEG CORRETORA DE SEGUROS LTDA</header>
+		<div class="container">
+			<div class="grid">
+				<!-- COLUNA ESQUERDA -->
+				<div>
+					<div class="card">
+						<h3>Lançamento financeiro</h3>
+						<form id="form">
+							<input type="date" id="data" required>
+							<select id="tipo" required>
+								<option value="">Tipo</option>
+								<option>Imposto</option>
+								<option>Fornecedor</option>
+								<option>Aluguel</option>
+								<option>Funcionário</option>
+								<option>Comissão</option>
+								<option>Seguro</option>
+								<option>Serviço</option>
+								<option>Outro</option>
+							</select>
+							<input type="number" id="valor" placeholder="Valor R$" step="0.01" required>
+							<input type="text" id="descricao" placeholder="Descrição">
+							<button type="submit">Pagar</button>
+						</form>
+					</div>
+					<div class="card">
+						<h3>Histórico Mensal</h3>
+						<div class="filters">
+							<input type="month" id="mes">
+							<select id="filtroTipo">
+								<option value="">Todos os tipos</option>
+								<option>Imposto</option>
+								<option>Fornecedor</option>
+								<option>Aluguel</option>
+								<option>Funcionário</option>
+								<option>Comissão</option>
+								<option>Seguro</option>
+								<option>Serviço</option>
+								<option>Outro</option>
+							</select>
+							<button onclick="exportarPDF()">📄 PDF</button>
+							<button onclick="backup()">📂 Backup</button>
+							<input type="file" id="importar" hidden onchange="importarBackup(this)">
+							<button onclick="document.getElementById('importar').click()">📥 Importar</button>
+						</div>
+						<table>
+							<thead>
+								<tr>
+									<th>Data</th>
+									<th>Tipo</th>
+									<th>Descrição</th>
+									<th>Valor</th>
+									<th>Ações</th>
+								</tr>
+							</thead>
+							<tbody id="lista"></tbody>
+						</table>
+						<div class="total" id="total"></div>
+					</div>
+				</div>
+				<!-- COLUNA DIREITA -->
+				<div>
+					<div class="card">
+						<h3>📈 Gráfico Mensal</h3>
+						<canvas id="grafico"></canvas>
+					</div>
+					<div class="card">
+						<h3>📊 Relatório Anual</h3>
+						<input type="number" id="ano" placeholder="Ano (ex: 2026)">
+						<button onclick="relatorioAnual()">Gerar</button>
+						<canvas id="graficoAno"></canvas>
+						<div id="totalAno"></div>
+					</div>
+				</div>
+			</div>
+		</div>
+		<script>
+			let editIndex=null;
+			const form=document.getElementById('form');
+			const lista=document.getElementById('lista');
+			const totalEl=document.getElementById('total');
+			const mesEl=document.getElementById('mes');
+			const filtroTipo=document.getElementById('filtroTipo');
+			
+			mesEl.value=new Date().toISOString().slice(0,7);
+			
+			function dados(){return JSON.parse(localStorage.getItem('gastosEmpresa'))||{}}
+			function salvar(d){localStorage.setItem('gastosEmpresa',JSON.stringify(d))}
+			
+			form.onsubmit=e=>{
+			e.preventDefault();
+			const d=dados();
+			const data=form.data.value;
+			const mes=data.slice(0,7);
+			if(!d[mes])d[mes]=[];
+			const g={data,tipo:form.tipo.value,valor:+form.valor.value,descricao:form.descricao.value};
+			editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
+			editIndex=null;
+			salvar(d);
+			form.reset();
+			carregar();
+			};
+			
+			mesEl.onchange=filtroTipo.onchange=carregar;
+			
+			function carregar(){
+			const d=dados();
+			const mes=mesEl.value;
+			lista.innerHTML='';
+			let total=0,porTipo={};
+			
+			(d[mes]||[]).forEach((g,i)=>{
+			if(filtroTipo.value && g.tipo!==filtroTipo.value)return;
+			total+=g.valor;
+			porTipo[g.tipo]=(porTipo[g.tipo]||0)+g.valor;
+			lista.innerHTML+=`
+			<tr>
+			<td>${g.data.split('-').reverse().join('/')}</td>
+			<td>${g.tipo}</td>
+			<td>${g.descricao||'-'}</td>
+			<td>R$ ${g.valor.toFixed(2)}</td>
+			<td class="actions">
+			<button onclick="editar(${i})">✏️</button>
+			<button class="danger" onclick="excluir(${i})">🗑</button>
+			</td>
+			</tr>`;
+			});
+			
+			totalEl.textContent=`Total do mês: R$ ${total.toFixed(2)}`;
+			graficoMensal(porTipo);
+			}
+			
+			function editar(i){
+			const g=dados()[mesEl.value][i];
+			form.data.value=g.data;
+			form.tipo.value=g.tipo;
+			form.valor.value=g.valor;
+			form.descricao.value=g.descricao;
+			editIndex=i;
+			}
+			
+			function excluir(i){
+			if(!confirm('Excluir gasto?'))return;
+			const d=dados();
+			d[mesEl.value].splice(i,1);
+			salvar(d);
+			carregar();
+			}
+			
+			let chart;
+			let chartAno;
+			function graficoMensal(d){
+			if(chart)chart.destroy();
+			chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
+			}
+			
+			let pastaBackup = null;
+			//alert("showDirectoryPicker = " + typeof window.showDirectoryPicker);
+			async function backup() {
+			  try {
+				// escolhe a pasta só na primeira vez
+				if (!pastaBackup) {
+				  pastaBackup = await window.showDirectoryPicker();
+				}
+
+				const nomeArquivo =
+				  "backup-financeiro_" +
+				  new Date().toISOString().slice(0,19).replace(/:/g, "-") +
+				  ".json";
+
+				const fileHandle = await pastaBackup.getFileHandle(nomeArquivo, {
+				  create: true
+				});
+
+				const writable = await fileHandle.createWritable();
+
+				await writable.write(
+				  JSON.stringify(dados(), null, 2)
+				);
+
+				await writable.close();
+
+				alert("Backup salvo com sucesso!");
+			  } catch (e) {
+				alert("Backup cancelado ou permissão negada.");
+			  }
+			}
+			
+			function importarBackup(i){
+			const file=i.files[0];
+			const r=new FileReader();
+			r.onload=e=>{localStorage.setItem('gastosEmpresa',e.target.result);carregar()};
+			r.readAsText(file);
+			}
+			
+			function relatorioAnual(){
+			    const ano = document.getElementById('ano').value;
+			    if(!ano) return;
+			
+			    const d = dados();
+			    let totalGeral = 0;
+			    let porMes = {};
+			
+			    Object.keys(d).forEach(m => {
+			        if(m.startsWith(ano)){
+			            const soma = d[m].reduce((s,g)=>s+g.valor,0);
+			            porMes[m] = soma;
+			            totalGeral += soma;
+			        }
+			    });
+			
+			    // Atualiza texto na tela
+			    document.getElementById('totalAno').innerText =
+			        `Total anual: R$ ${totalGeral.toFixed(2)}`;
+			
+			    // 🔥 DESTROI GRÁFICO ANTERIOR (ESSENCIAL)
+			    if(chartAno){
+			        chartAno.destroy();
+			    }
+			
+			    chartAno = new Chart(graficoAno,{
+			        type:'bar',
+			        data:{
+			            labels:Object.keys(porMes),
+			            datasets:[{
+			                label:'Total por mês',
+			                data:Object.values(porMes)
+			            }]
+			        }
+			    });
+			
+			    // ===== PDF ANUAL =====
+			    const { jsPDF } = window.jspdf;
+			    const doc = new jsPDF();
+			
+			    let y = 20;
+			
+			    doc.setFontSize(18);
+			    doc.text('EP SEG - Relatório Financeiro Anual', 14, y);
+			    y += 8;
+			
+			    doc.setFontSize(11);
+			    doc.text(`Ano: ${ano}`, 14, y);
+			    y += 6;
+			
+			    doc.line(14, y, 196, y);
+			    y += 10;
+			
+			    doc.setFontSize(10);
+			    doc.text('Mês', 14, y);
+			    doc.text('Total (R$)', 170, y, { align:'right' });
+			    y += 4;
+			
+			    doc.line(14, y, 196, y);
+			    y += 6;
+			
+			    Object.keys(porMes).sort().forEach(m => {
+			        doc.text(m, 14, y);
+			        doc.text(porMes[m].toFixed(2), 170, y, { align:'right' });
+			        y += 6;
+			
+			        if(y > 270){
+			            doc.addPage();
+			            y = 20;
+			        }
+			    });
+			
+			    y += 6;
+			    doc.line(14, y, 196, y);
+			    y += 8;
+			
+			    doc.setFontSize(12);
+			    doc.text(`Total geral do ano: R$ ${totalGeral.toFixed(2)}`, 14, y);
+			
+			    doc.save(`relatorio-anual-${ano}.pdf`);
+			}
+			
+			async function exportarPDF(){
+			    const { jsPDF } = window.jspdf;
+			    const doc = new jsPDF();
+			
+			    const mes = mesEl.value;
+			    const dadosMes = (dados()[mes] || []).slice().sort((a,b)=>{
+			        return new Date(a.data) - new Date(b.data);
+			    });
+			
+			    let y = 20;
+			    let total = 0;
+			    let subtotalTipo = {};
+			
+			    // ===== CABEÇALHO =====
+			    doc.setFontSize(18);
+			    doc.text('EP SEG - Comprovante Mensal de Gastos', 14, y);
+			    y += 8;
+			
+			    doc.setFontSize(11);
+			    doc.text(`Mês de referência: ${mes}`, 14, y);
+			    y += 6;
+			
+			    doc.line(14, y, 196, y);
+			    y += 8;
+			
+			    // ===== CABEÇALHO DA TABELA =====
+			    doc.setFontSize(10);
+			    doc.text('Data', 14, y);
+			    doc.text('Tipo', 40, y);
+			    doc.text('Descrição', 75, y);
+			    doc.text('Valor (R$)', 170, y, { align: 'right' });
+			    y += 4;
+			
+			    doc.line(14, y, 196, y);
+			    y += 6;
+			
+			    // ===== LISTAGEM =====
+			    dadosMes.forEach(g => {
+			        total += g.valor;
+			        subtotalTipo[g.tipo] = (subtotalTipo[g.tipo] || 0) + g.valor;
+			
+			        doc.text(g.data.split('-').reverse().join('/'), 14, y);
+			        doc.text(g.tipo, 40, y);
+			        doc.text(g.descricao || '-', 75, y);
+			        doc.text(g.valor.toFixed(2), 170, y, { align: 'right' });
+			
+			        y += 6;
+			
+			        if (y > 270) {
+			            adicionarRodape(doc);
+			            doc.addPage();
+			            y = 20;
+			        }
+			    });
+			
+			    // ===== SUBTOTAL POR TIPO =====
+			    y += 6;
+			    doc.line(14, y, 196, y);
+			    y += 8;
+			
+			    doc.setFontSize(12);
+			    doc.text('Subtotal por Tipo', 14, y);
+			    y += 8;
+			
+			    doc.setFontSize(10);
+			
+			    Object.keys(subtotalTipo).forEach(tipo => {
+			        doc.text(tipo, 20, y);
+			        doc.text(subtotalTipo[tipo].toFixed(2), 170, y, { align:'right' });
+			        y += 6;
+			
+			        if (y > 270) {
+			            adicionarRodape(doc);
+			            doc.addPage();
+			            y = 20;
+			        }
+			    });
+			
+			    // ===== TOTAL GERAL =====
+			    y += 6;
+			    doc.line(14, y, 196, y);
+			    y += 8;
+			
+			    doc.setFontSize(13);
+			    doc.text(`Total do mês: R$ ${total.toFixed(2)}`, 14, y);
+			
+			    // ===== RODAPÉ FINAL =====
+			    adicionarRodape(doc);
+			
+			    doc.save(`comprovante-${mes}.pdf`);
+			}
+			
+			// ===== FUNÇÃO DE RODAPÉ =====
+			function adicionarRodape(doc){
+			    const agora = new Date();
+			    const dataHora =
+			        agora.toLocaleDateString('pt-BR') + ' ' +
+			        agora.toLocaleTimeString('pt-BR');
+			
+			    doc.setFontSize(8);
+			    doc.setTextColor(120);
+			    doc.text(
+			        `Documento gerado em ${dataHora}`,
+			        105,
+			        290,
+			        { align:'center' }
+			    );
+			    doc.setTextColor(0);
+			}
+			
+			carregar();
+		</script>
+		<div class="assinatura">
+			<strong>by hiro v1.0</strong>
+			<span>EP SEG financial dashboard</span>
+		</div>
+	</body>
+</html>
