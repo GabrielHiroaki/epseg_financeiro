@@ -108,6 +108,47 @@
 			0 0 25px rgba(170, 90, 255, 0.9),
 			0 0 45px rgba(120, 40, 220, 0.8);
 			}
+			.backup-bar{
+			display:flex;
+			justify-content:space-between;
+			align-items:center;
+			gap:12px;
+			background:linear-gradient(135deg,#020617,#0b1020);
+			padding:12px 16px;
+			border-radius:14px;
+			margin-bottom:12px;
+			border:1px solid #1f2937;
+			}
+			.backup-status{
+			font-size:14px;
+			color:#c7d2fe;
+			display:flex;
+			align-items:center;
+			gap:8px;
+			}
+			.backup-status strong{
+			color:#a5b4fc;
+			font-weight:600;
+			}
+			.backup-status::before{
+			content:"🕒";
+			font-size:16px;
+			filter:drop-shadow(0 0 6px rgba(99,102,241,.7));
+			}
+			.backup-actions{
+			display:flex;
+			gap:8px;
+			}
+			.backup-actions button{
+			background:linear-gradient(135deg,#6366f1,#4f46e5);
+			padding:8px 14px;
+			border-radius:10px;
+			font-size:14px;
+			box-shadow:0 0 12px rgba(99,102,241,.4);
+			}
+			.backup-actions button:hover{
+			transform:translateY(-1px);
+			}
 		</style>
 	</head>
 	<body>
@@ -151,10 +192,15 @@
 								<option>Serviço</option>
 								<option>Outro</option>
 							</select>
+							<div class="backup-bar">
+								<div class="backup-status" id="infoBackup"></div>
+								<div class="backup-actions">
+									<button onclick="backup()">📂 Backup</button>
+									<input type="file" id="importar" hidden onchange="importarBackup(this)">
+									<button onclick="document.getElementById('importar').click()">📥 Importar</button>
+								</div>
+							</div>
 							<button onclick="exportarPDF()">📄 PDF</button>
-							<button onclick="backup()">📂 Backup</button>
-							<input type="file" id="importar" hidden onchange="importarBackup(this)">
-							<button onclick="document.getElementById('importar').click()">📥 Importar</button>
 						</div>
 						<table>
 							<thead>
@@ -267,43 +313,65 @@
 			chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
 			}
 			
-			let pastaBackup = null;
-			//alert("showDirectoryPicker = " + typeof window.showDirectoryPicker);
-			async function backup() {
-			  try {
-				// escolhe a pasta só na primeira vez
-				if (!pastaBackup) {
-				  pastaBackup = await window.showDirectoryPicker();
-				}
-
-				const nomeArquivo =
-				  "backup-financeiro_" +
-				  new Date().toISOString().slice(0,19).replace(/:/g, "-") +
-				  ".json";
-
-				const fileHandle = await pastaBackup.getFileHandle(nomeArquivo, {
-				  create: true
-				});
-
-				const writable = await fileHandle.createWritable();
-
-				await writable.write(
-				  JSON.stringify(dados(), null, 2)
-				);
-
-				await writable.close();
-
-				alert("Backup salvo com sucesso!");
-			  } catch (e) {
-				alert("Backup cancelado ou permissão negada.");
-			  }
+			function salvarUltimoBackup(dataHora){
+				localStorage.setItem('ultimoBackup', dataHora);
+				atualizarInfoBackup();
 			}
 			
-			function importarBackup(i){
-			const file=i.files[0];
-			const r=new FileReader();
-			r.onload=e=>{localStorage.setItem('gastosEmpresa',e.target.result);carregar()};
-			r.readAsText(file);
+			function atualizarInfoBackup(){
+				const info = localStorage.getItem('ultimoBackup');
+					document.getElementById('infoBackup').innerHTML =
+						info 
+						? `Último backup <strong>${info}</strong>` 
+						: `Nenhum backup realizado ainda`;
+			}
+			
+			function backup(){
+				const agora = new Date();
+				const dataHora =
+					agora.toLocaleDateString('pt-BR') + ' ' +
+					agora.toLocaleTimeString('pt-BR');
+			
+				const pacote = {
+					ultimoBackup: dataHora,
+					dados: dados()
+				};
+			
+				const blob = new Blob(
+					[JSON.stringify(pacote, null, 2)],
+					{ type: "application/json" }
+				);
+			
+				const a = document.createElement("a");
+				a.href = URL.createObjectURL(blob);
+				a.download = "backup-financeiro.json";
+				a.click();
+			
+				salvarUltimoBackup(dataHora);
+			}
+			
+			function importarBackup(input){
+				const file = input.files[0];
+				if(!file) return;
+			
+				const r = new FileReader();
+			
+				r.onload = e => {
+					const pacote = JSON.parse(e.target.result);
+			
+					if(pacote.dados){
+						localStorage.setItem('gastosEmpresa', JSON.stringify(pacote.dados));
+					}
+			
+					if(pacote.ultimoBackup){
+						localStorage.setItem('ultimoBackup', pacote.ultimoBackup);
+					}
+			
+					atualizarInfoBackup();
+					carregar();
+				};
+			
+				r.readAsText(file);
 			}
 			
 			function relatorioAnual(){
@@ -497,7 +565,7 @@
 			    );
 			    doc.setTextColor(0);
 			}
-			
+			atualizarInfoBackup();
 			carregar();
 		</script>
 		<div class="assinatura">
