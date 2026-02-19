@@ -173,8 +173,7 @@
 								<option>Outro</option>
 							</select>
 							<input type="number" id="valor" placeholder="Valor R$" step="0.01" required>
-							<input type="text" id="descricao" list="listaDescricoes" placeholder="Descrição">
-							<datalist id="listaDescricoes"></datalist>
+							<input type="text" id="descricao" placeholder="Descrição">
 							<button type="submit">Pagar</button>
 						</form>
 					</div>
@@ -240,25 +239,9 @@
 			const lista=document.getElementById('lista');
 			const totalEl=document.getElementById('total');
 			const mesEl=document.getElementById('mes');
-			const dataInput = document.getElementById('data');
 			const filtroTipo=document.getElementById('filtroTipo');
-
-			// Restaurar último tipo ao carregar
-			const ultimoTipo = localStorage.getItem('ultimoTipo');
-			if (ultimoTipo) form.tipo.value = ultimoTipo;
-
-			form.valor.addEventListener("keydown", e=>{
-			    if(e.key === "Enter"){
-			        e.preventDefault();
-			        form.requestSubmit();
-			    }
-			});
 			
 			mesEl.value=new Date().toISOString().slice(0,7);
-			function hoje(){
-			    return new Date().toISOString().split('T')[0];
-			}
-			dataInput.value = hoje();
 			
 			function dados(){return JSON.parse(localStorage.getItem('gastosEmpresa'))||{}}
 			function salvar(d){localStorage.setItem('gastosEmpresa',JSON.stringify(d))}
@@ -270,76 +253,41 @@
 			const mes=data.slice(0,7);
 			if(!d[mes])d[mes]=[];
 			const g={data,tipo:form.tipo.value,valor:+form.valor.value,descricao:form.descricao.value};
-			localStorage.setItem('ultimoTipo', form.tipo.value);
-			let descricoes = JSON.parse(localStorage.getItem('descricoes')) || [];
-			
-			if(form.descricao.value && !descricoes.includes(form.descricao.value)){
-			    descricoes.push(form.descricao.value);
-			    localStorage.setItem('descricoes', JSON.stringify(descricoes));
-			}
 			editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
 			editIndex=null;
 			salvar(d);
-			form.valor.value = '';
-			form.descricao.value = '';
-			form.data.value = hoje();
-			form.valor.focus();
+			form.reset();
 			carregar();
 			};
 			
 			mesEl.onchange=filtroTipo.onchange=carregar;
-
-			function carregarDescricoes(){
-			    const lista = document.getElementById('listaDescricoes');
-			    const descricoes = JSON.parse(localStorage.getItem('descricoes')) || [];
 			
-			    lista.innerHTML = descricoes.map(d => `<option value="${d}">`).join('');
-			}
 			function carregar(){
-			    const d = dados();
-			    const mes = mesEl.value;
+			const d=dados();
+			const mes=mesEl.value;
+			lista.innerHTML='';
+			let total=0,porTipo={};
 			
-			    lista.innerHTML = '';
+			(d[mes]||[]).forEach((g,i)=>{
+			if(filtroTipo.value && g.tipo!==filtroTipo.value)return;
+			total+=g.valor;
+			porTipo[g.tipo]=(porTipo[g.tipo]||0)+g.valor;
+			lista.innerHTML+=`
+			<tr>
+			<td>${g.data.split('-').reverse().join('/')}</td>
+			<td>${g.tipo}</td>
+			<td>${g.descricao||'-'}</td>
+			<td>R$ ${g.valor.toFixed(2)}</td>
+			<td class="actions">
+			<button onclick="editar(${i})">✏️</button>
+			<button class="danger" onclick="excluir(${i})">🗑</button>
+			</td>
+			</tr>`;
+			});
 			
-			    let total = 0, porTipo = {};
-			
-			    const rows = [];
-			
-				(d[mes] || [])
-				    .slice()
-				    .sort((a,b)=> new Date(b.data) - new Date(a.data))
-				    .forEach((g,i)=>{
-			        if(filtroTipo.value && g.tipo !== filtroTipo.value) return;
-			
-			        total += g.valor;
-			        porTipo[g.tipo] = (porTipo[g.tipo] || 0) + g.valor;
-			
-			        rows.push(`
-			            <tr>
-			                <td>${g.data.split('-').reverse().join('/')}</td>
-			                <td>${g.tipo}</td>
-			                <td>${g.descricao || '-'}</td>
-			                <td>R$ ${g.valor.toFixed(2)}</td>
-			                <td class="actions">
-			                    <button onclick="editar(${i})">✏️</button>
-								<button onclick="duplicar(${i})">📄</button>
-			                    <button class="danger" onclick="excluir(${i})">🗑</button>
-			                </td>
-			            </tr>
-			        `);
-			    });
-			
-			    lista.innerHTML = rows.join('');
-			
-			    totalEl.textContent = `Total do mês: R$ ${total.toFixed(2)}`;
-			
-			    graficoMensal(porTipo);
-				setTimeout(()=>{
-				   const firstRow = lista.querySelector("tr");
-				   if(firstRow) firstRow.style.background = "rgba(99,102,241,.15)";
-				},50);
+			totalEl.textContent=`Total do mês: R$ ${total.toFixed(2)}`;
+			graficoMensal(porTipo);
 			}
-
 			
 			function editar(i){
 			const g=dados()[mesEl.value][i];
@@ -349,17 +297,7 @@
 			form.descricao.value=g.descricao;
 			editIndex=i;
 			}
-
-			function duplicar(i){
-			    const g = dados()[mesEl.value][i];
 			
-			    form.data.value = hoje();
-			    form.tipo.value = g.tipo;
-			    form.valor.value = g.valor;
-			    form.descricao.value = g.descricao;
-			
-			    form.valor.focus();
-			}
 			function excluir(i){
 			if(!confirm('Excluir gasto?'))return;
 			const d=dados();
@@ -371,25 +309,9 @@
 			let chart;
 			let chartAno;
 			function graficoMensal(d){
-			    const labels = Object.keys(d);
-			    const values = Object.values(d);
-			
-			    if(!chart){
-			        chart = new Chart(grafico,{
-			            type:'pie',
-			            data:{
-			                labels: labels,
-			                datasets:[{ data: values }]
-			            }
-			        });
-			        return;
-			    }
-			
-			    chart.data.labels = labels;
-			    chart.data.datasets[0].data = values;
-			    chart.update();
+			if(chart)chart.destroy();
+			chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
 			}
-
 			
 			function salvarUltimoBackup(dataHora){
 				localStorage.setItem('ultimoBackup', dataHora);
@@ -643,7 +565,6 @@
 			    );
 			    doc.setTextColor(0);
 			}
-			carregarDescricoes();
 			atualizarInfoBackup();
 			carregar();
 		</script>
