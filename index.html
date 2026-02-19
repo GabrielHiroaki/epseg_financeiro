@@ -256,38 +256,51 @@
 			editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
 			editIndex=null;
 			salvar(d);
-			form.reset();
+			form.valor.value = '';
+			form.descricao.value = '';
+			form.valor.focus();
 			carregar();
 			};
 			
 			mesEl.onchange=filtroTipo.onchange=carregar;
 			
 			function carregar(){
-			const d=dados();
-			const mes=mesEl.value;
-			lista.innerHTML='';
-			let total=0,porTipo={};
+			    const d = dados();
+			    const mes = mesEl.value;
 			
-			(d[mes]||[]).forEach((g,i)=>{
-			if(filtroTipo.value && g.tipo!==filtroTipo.value)return;
-			total+=g.valor;
-			porTipo[g.tipo]=(porTipo[g.tipo]||0)+g.valor;
-			lista.innerHTML+=`
-			<tr>
-			<td>${g.data.split('-').reverse().join('/')}</td>
-			<td>${g.tipo}</td>
-			<td>${g.descricao||'-'}</td>
-			<td>R$ ${g.valor.toFixed(2)}</td>
-			<td class="actions">
-			<button onclick="editar(${i})">✏️</button>
-			<button class="danger" onclick="excluir(${i})">🗑</button>
-			</td>
-			</tr>`;
-			});
+			    lista.innerHTML = '';
 			
-			totalEl.textContent=`Total do mês: R$ ${total.toFixed(2)}`;
-			graficoMensal(porTipo);
+			    let total = 0, porTipo = {};
+			
+			    const rows = [];
+			
+			    (d[mes] || []).forEach((g,i)=>{
+			        if(filtroTipo.value && g.tipo !== filtroTipo.value) return;
+			
+			        total += g.valor;
+			        porTipo[g.tipo] = (porTipo[g.tipo] || 0) + g.valor;
+			
+			        rows.push(`
+			            <tr>
+			                <td>${g.data.split('-').reverse().join('/')}</td>
+			                <td>${g.tipo}</td>
+			                <td>${g.descricao || '-'}</td>
+			                <td>R$ ${g.valor.toFixed(2)}</td>
+			                <td class="actions">
+			                    <button onclick="editar(${i})">✏️</button>
+			                    <button class="danger" onclick="excluir(${i})">🗑</button>
+			                </td>
+			            </tr>
+			        `);
+			    });
+			
+			    lista.innerHTML = rows.join('');
+			
+			    totalEl.textContent = `Total do mês: R$ ${total.toFixed(2)}`;
+			
+			    graficoMensal(porTipo);
 			}
+
 			
 			function editar(i){
 			const g=dados()[mesEl.value][i];
@@ -309,9 +322,25 @@
 			let chart;
 			let chartAno;
 			function graficoMensal(d){
-			if(chart)chart.destroy();
-			chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
+			    const labels = Object.keys(d);
+			    const values = Object.values(d);
+			
+			    if(!chart){
+			        chart = new Chart(grafico,{
+			            type:'pie',
+			            data:{
+			                labels: labels,
+			                datasets:[{ data: values }]
+			            }
+			        });
+			        return;
+			    }
+			
+			    chart.data.labels = labels;
+			    chart.data.datasets[0].data = values;
+			    chart.update();
 			}
+
 			
 			function salvarUltimoBackup(dataHora){
 				localStorage.setItem('ultimoBackup', dataHora);
