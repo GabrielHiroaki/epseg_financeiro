@@ -173,9 +173,15 @@
 								<option>Outro</option>
 							</select>
 							<input type="number" id="valor" placeholder="Valor R$" step="0.01" required>
-							<input type="text" id="descricao" placeholder="Descrição">
+							<input type="text" id="descricao" list="listaDescricoes" placeholder="Descrição">
+							<datalist id="listaDescricoes"></datalist>
 							<button type="submit">Pagar</button>
 						</form>
+					<div id="lancamentosRapidos" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+					    <button type="button" onclick="lancarRapido('Aluguel', 3500, 'Aluguel escritório')">🏢 Aluguel</button>
+					    <button type="button" onclick="lancarRapido('Funcionário', 8000, 'Folha pagamento')">👤 Salário</button>
+					    <button type="button" onclick="lancarRapido('Imposto', 1200, 'Impostos')">💰 Imposto</button>
+					</div>
 					</div>
 					<div class="card">
 						<h3>Histórico Mensal</h3>
@@ -239,9 +245,25 @@
 			const lista=document.getElementById('lista');
 			const totalEl=document.getElementById('total');
 			const mesEl=document.getElementById('mes');
+			const dataInput = document.getElementById('data');
 			const filtroTipo=document.getElementById('filtroTipo');
+
+			// Restaurar último tipo ao carregar
+			const ultimoTipo = localStorage.getItem('ultimoTipo');
+			if (ultimoTipo) form.tipo.value = ultimoTipo;
+
+			form.valor.addEventListener("keydown", e=>{
+			    if(e.key === "Enter"){
+			        e.preventDefault();
+			        form.requestSubmit();
+			    }
+			});
 			
 			mesEl.value=new Date().toISOString().slice(0,7);
+			function hoje(){
+			    return new Date().toISOString().split('T')[0];
+			}
+			dataInput.value = hoje();
 			
 			function dados(){return JSON.parse(localStorage.getItem('gastosEmpresa'))||{}}
 			function salvar(d){localStorage.setItem('gastosEmpresa',JSON.stringify(d))}
@@ -253,17 +275,39 @@
 			const mes=data.slice(0,7);
 			if(!d[mes])d[mes]=[];
 			const g={data,tipo:form.tipo.value,valor:+form.valor.value,descricao:form.descricao.value};
+			localStorage.setItem('ultimoTipo', form.tipo.value);
+			let descricoes = JSON.parse(localStorage.getItem('descricoes')) || [];
+			
+			if(form.descricao.value && !descricoes.includes(form.descricao.value)){
+			    descricoes.push(form.descricao.value);
+			    localStorage.setItem('descricoes', JSON.stringify(descricoes));
+			}
 			editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
 			editIndex=null;
 			salvar(d);
 			form.valor.value = '';
 			form.descricao.value = '';
+			form.data.value = hoje();
 			form.valor.focus();
 			carregar();
 			};
 			
 			mesEl.onchange=filtroTipo.onchange=carregar;
+
+			function lancarRapido(tipo, valor, descricao){
+			    form.data.value = hoje();
+			    form.tipo.value = tipo;
+			    form.valor.value = valor;
+			    form.descricao.value = descricao;
 			
+			    form.requestSubmit();
+			}
+			function carregarDescricoes(){
+			    const lista = document.getElementById('listaDescricoes');
+			    const descricoes = JSON.parse(localStorage.getItem('descricoes')) || [];
+			
+			    lista.innerHTML = descricoes.map(d => `<option value="${d}">`).join('');
+			}
 			function carregar(){
 			    const d = dados();
 			    const mes = mesEl.value;
@@ -274,7 +318,10 @@
 			
 			    const rows = [];
 			
-			    (d[mes] || []).forEach((g,i)=>{
+				(d[mes] || [])
+				    .slice()
+				    .sort((a,b)=> new Date(b.data) - new Date(a.data))
+				    .forEach((g,i)=>{
 			        if(filtroTipo.value && g.tipo !== filtroTipo.value) return;
 			
 			        total += g.valor;
@@ -288,6 +335,7 @@
 			                <td>R$ ${g.valor.toFixed(2)}</td>
 			                <td class="actions">
 			                    <button onclick="editar(${i})">✏️</button>
+								<button onclick="duplicar(${i})">📄</button>
 			                    <button class="danger" onclick="excluir(${i})">🗑</button>
 			                </td>
 			            </tr>
@@ -299,6 +347,10 @@
 			    totalEl.textContent = `Total do mês: R$ ${total.toFixed(2)}`;
 			
 			    graficoMensal(porTipo);
+				setTimeout(()=>{
+				   const firstRow = lista.querySelector("tr");
+				   if(firstRow) firstRow.style.background = "rgba(99,102,241,.15)";
+				},50);
 			}
 
 			
@@ -310,7 +362,17 @@
 			form.descricao.value=g.descricao;
 			editIndex=i;
 			}
+
+			function duplicar(i){
+			    const g = dados()[mesEl.value][i];
 			
+			    form.data.value = hoje();
+			    form.tipo.value = g.tipo;
+			    form.valor.value = g.valor;
+			    form.descricao.value = g.descricao;
+			
+			    form.valor.focus();
+			}
 			function excluir(i){
 			if(!confirm('Excluir gasto?'))return;
 			const d=dados();
@@ -594,6 +656,7 @@
 			    );
 			    doc.setTextColor(0);
 			}
+			carregarDescricoes();
 			atualizarInfoBackup();
 			carregar();
 		</script>
