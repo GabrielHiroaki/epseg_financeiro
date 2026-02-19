@@ -177,11 +177,6 @@
 							<datalist id="listaDescricoes"></datalist>
 							<button type="submit">Pagar</button>
 						</form>
-					<div id="lancamentosRapidos" style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
-					    <button type="button" onclick="lancarRapido('Aluguel', 3500, 'Aluguel escritório')">🏢 Aluguel</button>
-					    <button type="button" onclick="lancarRapido('Funcionário', 8000, 'Folha pagamento')">👤 Salário</button>
-					    <button type="button" onclick="lancarRapido('Imposto', 1200, 'Impostos')">💰 Imposto</button>
-					</div>
 					</div>
 					<div class="card">
 						<h3>Histórico Mensal</h3>
@@ -294,14 +289,6 @@
 			
 			mesEl.onchange=filtroTipo.onchange=carregar;
 
-			function lancarRapido(tipo, valor, descricao){
-			    form.data.value = hoje();
-			    form.tipo.value = tipo;
-			    form.valor.value = valor;
-			    form.descricao.value = descricao;
-			
-			    form.requestSubmit();
-			}
 			function carregarDescricoes(){
 			    const lista = document.getElementById('listaDescricoes');
 			    const descricoes = JSON.parse(localStorage.getItem('descricoes')) || [];
