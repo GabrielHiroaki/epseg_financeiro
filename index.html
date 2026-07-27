@@ -22,6 +22,19 @@
 			font-size:18px;
 			font-weight:600;
 			border-bottom:1px solid #1f2937;
+			display:flex;
+			justify-content:space-between;
+			align-items:center;
+			flex-wrap:wrap;
+			gap:8px;
+			}
+			#statusSync{
+			font-size:13px;
+			font-weight:500;
+			padding:5px 10px;
+			border-radius:8px;
+			background:#0f172a;
+			border:1px solid #1f2937;
 			}
 			.container{max-width:1200px;margin:auto;padding:20px}
 			.grid{
@@ -47,6 +60,7 @@
 			background:var(--primary);
 			cursor:pointer;
 			}
+			button:disabled{opacity:.5;cursor:not-allowed}
 			button.danger{background:var(--danger)}
 			button:hover{opacity:.9}
 			form{
@@ -118,6 +132,7 @@
 			border-radius:14px;
 			margin-bottom:12px;
 			border:1px solid #1f2937;
+			flex-wrap:wrap;
 			}
 			.backup-status{
 			font-size:14px;
@@ -138,6 +153,7 @@
 			.backup-actions{
 			display:flex;
 			gap:8px;
+			flex-wrap:wrap;
 			}
 			.backup-actions button{
 			background:linear-gradient(135deg,#6366f1,#4f46e5);
@@ -152,7 +168,10 @@
 		</style>
 	</head>
 	<body>
-		<header>💼 EP SEG CORRETORA DE SEGUROS LTDA</header>
+		<header>
+			<span>💼 EP SEG CORRETORA DE SEGUROS LTDA</span>
+			<span id="statusSync">⏳ Conectando ao Firestore...</span>
+		</header>
 		<div class="container">
 			<div class="grid">
 				<!-- COLUNA ESQUERDA -->
@@ -174,7 +193,7 @@
 							</select>
 							<input type="number" id="valor" placeholder="Valor R$" step="0.01" required>
 							<input type="text" id="descricao" placeholder="Descrição">
-							<button type="submit">Pagar</button>
+							<button type="submit" id="btnSalvar">Pagar</button>
 						</form>
 					</div>
 					<div class="card">
@@ -192,15 +211,15 @@
 								<option>Serviço</option>
 								<option>Outro</option>
 							</select>
-							<div class="backup-bar">
-								<div class="backup-status" id="infoBackup"></div>
-								<div class="backup-actions">
-									<button onclick="backup()">📂 Backup</button>
-									<input type="file" id="importar" hidden onchange="importarBackup(this)">
-									<button onclick="document.getElementById('importar').click()">📥 Importar</button>
-								</div>
+						</div>
+						<div class="backup-bar">
+							<div class="backup-status" id="infoBackup"></div>
+							<div class="backup-actions">
+								<button onclick="backup()">📂 Backup (.json)</button>
+								<input type="file" id="importar" hidden onchange="importarBackup(this)">
+								<button onclick="document.getElementById('importar').click()">📥 Importar</button>
+								<button onclick="exportarPDF()">📄 PDF</button>
 							</div>
-							<button onclick="exportarPDF()">📄 PDF</button>
 						</div>
 						<table>
 							<thead>
@@ -233,340 +252,418 @@
 				</div>
 			</div>
 		</div>
-		<script>
+
+		<script type="module">
+			// ================== FIREBASE / FIRESTORE ==================
+			import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.2/firebase-app.js";
+			import {
+				getFirestore, doc, setDoc, onSnapshot,
+				enableIndexedDbPersistence
+			} from "https://www.gstatic.com/firebasejs/10.13.2/firebase-firestore.js";
+
+			const firebaseConfig = {
+				apiKey: "AIzaSyDquShvUWoMFcOH1jJQ3QTX27qyfmNapjQ",
+				authDomain: "epseg-financeiro.firebaseapp.com",
+				projectId: "epseg-financeiro",
+				storageBucket: "epseg-financeiro.firebasestorage.app",
+				messagingSenderId: "1086429002169",
+				appId: "1:1086429002169:web:e8d6567765520e85d35e68",
+				measurementId: "G-TG8DBMFJLY"
+			};
+
+			const app = initializeApp(firebaseConfig);
+			const db = getFirestore(app);
+
+			// Permite continuar usando o app offline e sincronizar depois
+			try{
+				await enableIndexedDbPersistence(db);
+			}catch(e){
+				console.warn("Persistência offline não habilitada:", e.code);
+			}
+
+			// Todos os lançamentos ficam num único documento desta empresa
+			const DOC_REF = doc(db, "financeiro", "epseg");
+
+			let dadosCache = {};
+			let ultimoBackupCache = null;
+			let carregado = false;
+
+			function atualizarStatusSync(ok){
+				const el = document.getElementById('statusSync');
+				if(!el) return;
+				el.textContent = ok ? '🟢 Sincronizado com Firestore' : '🔴 Sem conexão — tentando reconectar';
+				el.style.color = ok ? '#86efac' : '#fca5a5';
+				document.getElementById('btnSalvar').disabled = !ok && !carregado;
+			}
+
+			onSnapshot(DOC_REF, snap => {
+				if(snap.exists()){
+					const d = snap.data();
+					dadosCache = d.gastos || {};
+					ultimoBackupCache = d.ultimoBackup || null;
+				}else{
+					dadosCache = {};
+					ultimoBackupCache = null;
+				}
+				carregado = true;
+				atualizarStatusSync(true);
+				atualizarInfoBackup();
+				carregar();
+			}, err => {
+				console.error("Erro ao ouvir o Firestore:", err);
+				atualizarStatusSync(false);
+			});
+
+			async function salvarFirestore(){
+				try{
+					await setDoc(DOC_REF, {
+						gastos: dadosCache,
+						ultimoBackup: ultimoBackupCache
+					});
+				}catch(e){
+					console.error("Erro ao salvar no Firestore:", e);
+					alert("Não foi possível salvar no Firestore agora. Verifique sua conexão com a internet.");
+				}
+			}
+
+			// ================== LÓGICA DO APP ==================
 			let editIndex=null;
 			const form=document.getElementById('form');
 			const lista=document.getElementById('lista');
 			const totalEl=document.getElementById('total');
 			const mesEl=document.getElementById('mes');
 			const filtroTipo=document.getElementById('filtroTipo');
-			
+
 			mesEl.value=new Date().toISOString().slice(0,7);
-			
-			function dados(){return JSON.parse(localStorage.getItem('gastosEmpresa'))||{}}
-			function salvar(d){localStorage.setItem('gastosEmpresa',JSON.stringify(d))}
-			
-			form.onsubmit=e=>{
-			e.preventDefault();
-			const d=dados();
-			const data=form.data.value;
-			const mes=data.slice(0,7);
-			if(!d[mes])d[mes]=[];
-			const g={data,tipo:form.tipo.value,valor:+form.valor.value,descricao:form.descricao.value};
-			editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
-			editIndex=null;
-			salvar(d);
-			form.reset();
-			carregar();
+
+			function dados(){ return dadosCache; }
+			function salvar(d){ dadosCache = d; salvarFirestore(); }
+
+			form.onsubmit = e => {
+				e.preventDefault();
+				if(!carregado){
+					alert("Aguarde o carregamento dos dados do Firestore antes de lançar.");
+					return;
+				}
+				const d=dados();
+				const data=form.data.value;
+				const mes=data.slice(0,7);
+				if(!d[mes])d[mes]=[];
+				const g={data,tipo:form.tipo.value,valor:+form.valor.value,descricao:form.descricao.value};
+				editIndex!==null?d[mes][editIndex]=g:d[mes].push(g);
+				editIndex=null;
+				salvar(d);
+				form.reset();
 			};
-			
+
 			mesEl.onchange=filtroTipo.onchange=carregar;
-			
+
 			function carregar(){
-			const d=dados();
-			const mes=mesEl.value;
-			lista.innerHTML='';
-			let total=0,porTipo={};
-			
-			(d[mes]||[]).forEach((g,i)=>{
-			if(filtroTipo.value && g.tipo!==filtroTipo.value)return;
-			total+=g.valor;
-			porTipo[g.tipo]=(porTipo[g.tipo]||0)+g.valor;
-			lista.innerHTML+=`
-			<tr>
-			<td>${g.data.split('-').reverse().join('/')}</td>
-			<td>${g.tipo}</td>
-			<td>${g.descricao||'-'}</td>
-			<td>R$ ${g.valor.toFixed(2)}</td>
-			<td class="actions">
-			<button onclick="editar(${i})">✏️</button>
-			<button class="danger" onclick="excluir(${i})">🗑</button>
-			</td>
-			</tr>`;
-			});
-			
-			totalEl.textContent=`Total do mês: R$ ${total.toFixed(2)}`;
-			graficoMensal(porTipo);
+				const d=dados();
+				const mes=mesEl.value;
+				lista.innerHTML='';
+				let total=0,porTipo={};
+
+				(d[mes]||[]).forEach((g,i)=>{
+					if(filtroTipo.value && g.tipo!==filtroTipo.value)return;
+					total+=g.valor;
+					porTipo[g.tipo]=(porTipo[g.tipo]||0)+g.valor;
+					lista.innerHTML+=`
+					<tr>
+					<td>${g.data.split('-').reverse().join('/')}</td>
+					<td>${g.tipo}</td>
+					<td>${g.descricao||'-'}</td>
+					<td>R$ ${g.valor.toFixed(2)}</td>
+					<td class="actions">
+					<button onclick="editar(${i})">✏️</button>
+					<button class="danger" onclick="excluir(${i})">🗑</button>
+					</td>
+					</tr>`;
+				});
+
+				totalEl.textContent=`Total do mês: R$ ${total.toFixed(2)}`;
+				graficoMensal(porTipo);
 			}
-			
+
 			function editar(i){
-			const g=dados()[mesEl.value][i];
-			form.data.value=g.data;
-			form.tipo.value=g.tipo;
-			form.valor.value=g.valor;
-			form.descricao.value=g.descricao;
-			editIndex=i;
+				const g=dados()[mesEl.value][i];
+				form.data.value=g.data;
+				form.tipo.value=g.tipo;
+				form.valor.value=g.valor;
+				form.descricao.value=g.descricao;
+				editIndex=i;
 			}
-			
+
 			function excluir(i){
-			if(!confirm('Excluir gasto?'))return;
-			const d=dados();
-			d[mesEl.value].splice(i,1);
-			salvar(d);
-			carregar();
+				if(!confirm('Excluir gasto?'))return;
+				const d=dados();
+				d[mesEl.value].splice(i,1);
+				salvar(d);
+				carregar();
 			}
-			
+
 			let chart;
 			let chartAno;
 			function graficoMensal(d){
-			if(chart)chart.destroy();
-			chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
+				if(chart)chart.destroy();
+				chart=new Chart(grafico,{type:'pie',data:{labels:Object.keys(d),datasets:[{data:Object.values(d)}]}});
 			}
-			
+
 			function salvarUltimoBackup(dataHora){
-				localStorage.setItem('ultimoBackup', dataHora);
+				ultimoBackupCache = dataHora;
+				salvarFirestore();
 				atualizarInfoBackup();
 			}
-			
+
 			function atualizarInfoBackup(){
-				const info = localStorage.getItem('ultimoBackup');
-					document.getElementById('infoBackup').innerHTML =
-						info 
-						? `Último backup <strong>${info}</strong>` 
-						: `Nenhum backup realizado ainda`;
+				document.getElementById('infoBackup').innerHTML =
+					ultimoBackupCache
+					? `Último backup <strong>${ultimoBackupCache}</strong>`
+					: `Nenhum backup realizado ainda`;
 			}
-			
+
 			function backup(){
+				if(!carregado){
+					alert("Aguarde o carregamento dos dados antes de gerar o backup.");
+					return;
+				}
 				const agora = new Date();
 				const dataHora =
 					agora.toLocaleDateString('pt-BR') + ' ' +
 					agora.toLocaleTimeString('pt-BR');
-			
+
 				const pacote = {
 					ultimoBackup: dataHora,
 					dados: dados()
 				};
-			
+
 				const blob = new Blob(
 					[JSON.stringify(pacote, null, 2)],
 					{ type: "application/json" }
 				);
-			
+
 				const a = document.createElement("a");
 				a.href = URL.createObjectURL(blob);
 				a.download = "backup-financeiro.json";
 				a.click();
-			
+
 				salvarUltimoBackup(dataHora);
 			}
-			
+
 			function importarBackup(input){
 				const file = input.files[0];
 				if(!file) return;
-			
+
 				const r = new FileReader();
-			
+
 				r.onload = e => {
-					const pacote = JSON.parse(e.target.result);
-			
-					if(pacote.dados){
-						localStorage.setItem('gastosEmpresa', JSON.stringify(pacote.dados));
+					let pacote;
+					try{
+						pacote = JSON.parse(e.target.result);
+					}catch(err){
+						alert("Arquivo de backup inválido.");
+						return;
 					}
-			
-					if(pacote.ultimoBackup){
-						localStorage.setItem('ultimoBackup', pacote.ultimoBackup);
-					}
-			
-					atualizarInfoBackup();
-					carregar();
+
+					if(!confirm("Importar este backup vai SUBSTITUIR os dados atuais no Firestore para todos os usuários. Continuar?")) return;
+
+					dadosCache = pacote.dados || {};
+					ultimoBackupCache = pacote.ultimoBackup || ultimoBackupCache;
+					salvarFirestore();
 				};
-			
+
 				r.readAsText(file);
 			}
-			
+
 			function relatorioAnual(){
-			    const ano = document.getElementById('ano').value;
-			    if(!ano) return;
-			
-			    const d = dados();
-			    let totalGeral = 0;
-			    let porMes = {};
-			
-			    Object.keys(d).forEach(m => {
-			        if(m.startsWith(ano)){
-			            const soma = d[m].reduce((s,g)=>s+g.valor,0);
-			            porMes[m] = soma;
-			            totalGeral += soma;
-			        }
-			    });
-			
-			    // Atualiza texto na tela
-			    document.getElementById('totalAno').innerText =
-			        `Total anual: R$ ${totalGeral.toFixed(2)}`;
-			
-			    // 🔥 DESTROI GRÁFICO ANTERIOR (ESSENCIAL)
-			    if(chartAno){
-			        chartAno.destroy();
-			    }
-			
-			    chartAno = new Chart(graficoAno,{
-			        type:'bar',
-			        data:{
-			            labels:Object.keys(porMes),
-			            datasets:[{
-			                label:'Total por mês',
-			                data:Object.values(porMes)
-			            }]
-			        }
-			    });
-			
-			    // ===== PDF ANUAL =====
-			    const { jsPDF } = window.jspdf;
-			    const doc = new jsPDF();
-			
-			    let y = 20;
-			
-			    doc.setFontSize(18);
-			    doc.text('EP SEG - Relatório Financeiro Anual', 14, y);
-			    y += 8;
-			
-			    doc.setFontSize(11);
-			    doc.text(`Ano: ${ano}`, 14, y);
-			    y += 6;
-			
-			    doc.line(14, y, 196, y);
-			    y += 10;
-			
-			    doc.setFontSize(10);
-			    doc.text('Mês', 14, y);
-			    doc.text('Total (R$)', 170, y, { align:'right' });
-			    y += 4;
-			
-			    doc.line(14, y, 196, y);
-			    y += 6;
-			
-			    Object.keys(porMes).sort().forEach(m => {
-			        doc.text(m, 14, y);
-			        doc.text(porMes[m].toFixed(2), 170, y, { align:'right' });
-			        y += 6;
-			
-			        if(y > 270){
-			            doc.addPage();
-			            y = 20;
-			        }
-			    });
-			
-			    y += 6;
-			    doc.line(14, y, 196, y);
-			    y += 8;
-			
-			    doc.setFontSize(12);
-			    doc.text(`Total geral do ano: R$ ${totalGeral.toFixed(2)}`, 14, y);
-			
-			    doc.save(`relatorio-anual-${ano}.pdf`);
+				const ano = document.getElementById('ano').value;
+				if(!ano) return;
+
+				const d = dados();
+				let totalGeral = 0;
+				let porMes = {};
+
+				Object.keys(d).forEach(m => {
+					if(m.startsWith(ano)){
+						const soma = d[m].reduce((s,g)=>s+g.valor,0);
+						porMes[m] = soma;
+						totalGeral += soma;
+					}
+				});
+
+				document.getElementById('totalAno').innerText =
+					`Total anual: R$ ${totalGeral.toFixed(2)}`;
+
+				if(chartAno){
+					chartAno.destroy();
+				}
+
+				chartAno = new Chart(graficoAno,{
+					type:'bar',
+					data:{
+						labels:Object.keys(porMes),
+						datasets:[{
+							label:'Total por mês',
+							data:Object.values(porMes)
+						}]
+					}
+				});
+
+				const { jsPDF } = window.jspdf;
+				const doc = new jsPDF();
+
+				let y = 20;
+
+				doc.setFontSize(18);
+				doc.text('EP SEG - Relatório Financeiro Anual', 14, y);
+				y += 8;
+
+				doc.setFontSize(11);
+				doc.text(`Ano: ${ano}`, 14, y);
+				y += 6;
+
+				doc.line(14, y, 196, y);
+				y += 10;
+
+				doc.setFontSize(10);
+				doc.text('Mês', 14, y);
+				doc.text('Total (R$)', 170, y, { align:'right' });
+				y += 4;
+
+				doc.line(14, y, 196, y);
+				y += 6;
+
+				Object.keys(porMes).sort().forEach(m => {
+					doc.text(m, 14, y);
+					doc.text(porMes[m].toFixed(2), 170, y, { align:'right' });
+					y += 6;
+
+					if(y > 270){
+						doc.addPage();
+						y = 20;
+					}
+				});
+
+				y += 6;
+				doc.line(14, y, 196, y);
+				y += 8;
+
+				doc.setFontSize(12);
+				doc.text(`Total geral do ano: R$ ${totalGeral.toFixed(2)}`, 14, y);
+
+				doc.save(`relatorio-anual-${ano}.pdf`);
 			}
-			
+
 			async function exportarPDF(){
-			    const { jsPDF } = window.jspdf;
-			    const doc = new jsPDF();
-			
-			    const mes = mesEl.value;
-			    const dadosMes = (dados()[mes] || []).slice().sort((a,b)=>{
-			        return new Date(a.data) - new Date(b.data);
-			    });
-			
-			    let y = 20;
-			    let total = 0;
-			    let subtotalTipo = {};
-			
-			    // ===== CABEÇALHO =====
-			    doc.setFontSize(18);
-			    doc.text('EP SEG - Comprovante Mensal de Gastos', 14, y);
-			    y += 8;
-			
-			    doc.setFontSize(11);
-			    doc.text(`Mês de referência: ${mes}`, 14, y);
-			    y += 6;
-			
-			    doc.line(14, y, 196, y);
-			    y += 8;
-			
-			    // ===== CABEÇALHO DA TABELA =====
-			    doc.setFontSize(10);
-			    doc.text('Data', 14, y);
-			    doc.text('Tipo', 40, y);
-			    doc.text('Descrição', 75, y);
-			    doc.text('Valor (R$)', 170, y, { align: 'right' });
-			    y += 4;
-			
-			    doc.line(14, y, 196, y);
-			    y += 6;
-			
-			    // ===== LISTAGEM =====
-			    dadosMes.forEach(g => {
-			        total += g.valor;
-			        subtotalTipo[g.tipo] = (subtotalTipo[g.tipo] || 0) + g.valor;
-			
-			        doc.text(g.data.split('-').reverse().join('/'), 14, y);
-			        doc.text(g.tipo, 40, y);
-			        doc.text(g.descricao || '-', 75, y);
-			        doc.text(g.valor.toFixed(2), 170, y, { align: 'right' });
-			
-			        y += 6;
-			
-			        if (y > 270) {
-			            adicionarRodape(doc);
-			            doc.addPage();
-			            y = 20;
-			        }
-			    });
-			
-			    // ===== SUBTOTAL POR TIPO =====
-			    y += 6;
-			    doc.line(14, y, 196, y);
-			    y += 8;
-			
-			    doc.setFontSize(12);
-			    doc.text('Subtotal por Tipo', 14, y);
-			    y += 8;
-			
-			    doc.setFontSize(10);
-			
-			    Object.keys(subtotalTipo).forEach(tipo => {
-			        doc.text(tipo, 20, y);
-			        doc.text(subtotalTipo[tipo].toFixed(2), 170, y, { align:'right' });
-			        y += 6;
-			
-			        if (y > 270) {
-			            adicionarRodape(doc);
-			            doc.addPage();
-			            y = 20;
-			        }
-			    });
-			
-			    // ===== TOTAL GERAL =====
-			    y += 6;
-			    doc.line(14, y, 196, y);
-			    y += 8;
-			
-			    doc.setFontSize(13);
-			    doc.text(`Total do mês: R$ ${total.toFixed(2)}`, 14, y);
-			
-			    // ===== RODAPÉ FINAL =====
-			    adicionarRodape(doc);
-			
-			    doc.save(`comprovante-${mes}.pdf`);
+				const { jsPDF } = window.jspdf;
+				const doc = new jsPDF();
+
+				const mes = mesEl.value;
+				const dadosMes = (dados()[mes] || []).slice().sort((a,b)=>{
+					return new Date(a.data) - new Date(b.data);
+				});
+
+				let y = 20;
+				let total = 0;
+				let subtotalTipo = {};
+
+				doc.setFontSize(18);
+				doc.text('EP SEG - Comprovante Mensal de Gastos', 14, y);
+				y += 8;
+
+				doc.setFontSize(11);
+				doc.text(`Mês de referência: ${mes}`, 14, y);
+				y += 6;
+
+				doc.line(14, y, 196, y);
+				y += 8;
+
+				doc.setFontSize(10);
+				doc.text('Data', 14, y);
+				doc.text('Tipo', 40, y);
+				doc.text('Descrição', 75, y);
+				doc.text('Valor (R$)', 170, y, { align: 'right' });
+				y += 4;
+
+				doc.line(14, y, 196, y);
+				y += 6;
+
+				dadosMes.forEach(g => {
+					total += g.valor;
+					subtotalTipo[g.tipo] = (subtotalTipo[g.tipo] || 0) + g.valor;
+
+					doc.text(g.data.split('-').reverse().join('/'), 14, y);
+					doc.text(g.tipo, 40, y);
+					doc.text(g.descricao || '-', 75, y);
+					doc.text(g.valor.toFixed(2), 170, y, { align: 'right' });
+
+					y += 6;
+
+					if (y > 270) {
+						adicionarRodape(doc);
+						doc.addPage();
+						y = 20;
+					}
+				});
+
+				y += 6;
+				doc.line(14, y, 196, y);
+				y += 8;
+
+				doc.setFontSize(12);
+				doc.text('Subtotal por Tipo', 14, y);
+				y += 8;
+
+				doc.setFontSize(10);
+
+				Object.keys(subtotalTipo).forEach(tipo => {
+					doc.text(tipo, 20, y);
+					doc.text(subtotalTipo[tipo].toFixed(2), 170, y, { align:'right' });
+					y += 6;
+
+					if (y > 270) {
+						adicionarRodape(doc);
+						doc.addPage();
+						y = 20;
+					}
+				});
+
+				y += 6;
+				doc.line(14, y, 196, y);
+				y += 8;
+
+				doc.setFontSize(13);
+				doc.text(`Total do mês: R$ ${total.toFixed(2)}`, 14, y);
+
+				adicionarRodape(doc);
+
+				doc.save(`comprovante-${mes}.pdf`);
 			}
-			
-			// ===== FUNÇÃO DE RODAPÉ =====
+
 			function adicionarRodape(doc){
-			    const agora = new Date();
-			    const dataHora =
-			        agora.toLocaleDateString('pt-BR') + ' ' +
-			        agora.toLocaleTimeString('pt-BR');
-			
-			    doc.setFontSize(8);
-			    doc.setTextColor(120);
-			    doc.text(
-			        `Documento gerado em ${dataHora}`,
-			        105,
-			        290,
-			        { align:'center' }
-			    );
-			    doc.setTextColor(0);
+				const agora = new Date();
+				const dataHora =
+					agora.toLocaleDateString('pt-BR') + ' ' +
+					agora.toLocaleTimeString('pt-BR');
+
+				doc.setFontSize(8);
+				doc.setTextColor(120);
+				doc.text(
+					`Documento gerado em ${dataHora}`,
+					105,
+					290,
+					{ align:'center' }
+				);
+				doc.setTextColor(0);
 			}
-			atualizarInfoBackup();
-			carregar();
+
+			// Expõe as funções usadas em onclick="" no HTML (necessário em módulos ES)
+			window.editar = editar;
+			window.excluir = excluir;
+			window.backup = backup;
+			window.importarBackup = importarBackup;
+			window.relatorioAnual = relatorioAnual;
+			window.exportarPDF = exportarPDF;
 		</script>
 		<div class="assinatura">
 			<strong>by hiro v1.0</strong>
